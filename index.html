@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>N700QT Flight History</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0e1a;color:#e0e6f0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── STATS BAR ─────────────────────────── */
+#stats-bar{background:rgba(12,18,35,0.95);border-bottom:1px solid #1e2d4a;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;z-index:1000;font-size:12px;min-height:38px}
+#stats-bar .stat{display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,0.05);border:1px solid #2a3a5a;border-radius:6px;padding:3px 10px;white-space:nowrap}
+#stats-bar .stat .val{font-size:14px;font-weight:700;color:#7dd3fc}
+#stats-bar .stat .lbl{font-size:9px;color:#8899bb;text-transform:uppercase;letter-spacing:.5px}
+#stats-title{font-weight:700;font-size:14px;color:#e0e6f0;margin-right:4px;white-space:nowrap}
+#stats-title span{color:#f9a8d4;font-size:11px;margin-left:4px}
+#stats-collapse{margin-left:auto;background:none;border:1px solid #2a3a5a;border-radius:4px;color:#8899bb;cursor:pointer;padding:2px 8px;font-size:11px}
+#stats-collapse:hover{color:#e0e6f0;border-color:#4a6a9a}
+
+/* ── MAIN AREA ─────────────────────────── */
+#main{flex:1;display:flex;overflow:hidden;position:relative}
+#map{flex:1;z-index:1}
+
+/* ── SIDEBAR ───────────────────────────── */
+#sidebar{width:300px;background:rgba(10,14,26,0.97);border-right:1px solid #1e2d4a;display:flex;flex-direction:column;z-index:500;transition:margin-left .25s;overflow:hidden}
+#sidebar.collapsed{margin-left:-300px}
+#sidebar-header{padding:10px 12px;border-bottom:1px solid #1e2d4a;display:flex;gap:6px;align-items:center}
+#sidebar-header h3{font-size:13px;color:#7dd3fc;flex:1}
+#search{flex:1;background:#0d1a30;border:1px solid #2a3a5a;border-radius:4px;color:#e0e6f0;padding:4px 8px;font-size:12px;outline:none}
+#search:focus{border-color:#7dd3fc}
+#year-filter{display:flex;flex-wrap:wrap;gap:3px;padding:6px 10px;border-bottom:1px solid #1e2d4a}
+.yr-btn{font-size:10px;padding:2px 6px;border:1px solid transparent;border-radius:3px;cursor:pointer;background:rgba(255,255,255,0.07);color:#ccc;transition:all .15s}
+.yr-btn.active{font-weight:700;color:#fff;border-color:currentColor}
+#flight-count{padding:4px 10px;font-size:10px;color:#5577aa}
+#flight-list{flex:1;overflow-y:auto;padding:4px}
+#flight-list::-webkit-scrollbar{width:4px}
+#flight-list::-webkit-scrollbar-thumb{background:#2a3a5a;border-radius:2px}
+.flight-item{padding:7px 9px;border-radius:5px;cursor:pointer;border:1px solid transparent;margin-bottom:2px;transition:all .15s}
+.flight-item:hover{background:rgba(125,211,252,0.08);border-color:#2a3a5a}
+.flight-item.selected{background:rgba(125,211,252,0.13);border-color:#7dd3fc}
+.fi-top{display:flex;justify-content:space-between;align-items:baseline}
+.fi-date{font-weight:600;font-size:12px}
+.fi-dist{font-size:11px;color:#7dd3fc}
+.fi-detail{font-size:10px;color:#6688aa;margin-top:2px;display:flex;gap:8px}
+.fi-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;flex-shrink:0}
+
+/* ── SIDEBAR TOGGLE ────────────────────── */
+#sidebar-toggle{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:600;background:rgba(10,14,26,0.9);border:1px solid #2a3a5a;border-left:none;border-radius:0 6px 6px 0;padding:10px 5px;cursor:pointer;color:#7dd3fc;font-size:12px;transition:left .25s;line-height:1}
+#sidebar.collapsed ~ #sidebar-toggle{left:0}
+
+/* ── LEGEND ────────────────────────────── */
+#legend{position:absolute;bottom:28px;right:10px;z-index:500;background:rgba(10,14,26,0.9);border:1px solid #2a3a5a;border-radius:6px;padding:8px 12px;font-size:11px}
+#legend h4{color:#8899bb;font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.leg-row{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.leg-line{width:22px;height:2px;border-radius:1px}
+
+/* ── MAP OVERLAY BUTTONS ───────────────── */
+#map-controls{position:absolute;bottom:60px;right:10px;z-index:500;display:flex;flex-direction:column;gap:5px}
+.map-ctrl-btn{background:rgba(10,14,26,0.92);border:1px solid #2a3a5a;border-radius:5px;color:#8899bb;cursor:pointer;padding:5px 10px;font-size:11px;text-align:left;transition:all .15s;white-space:nowrap}
+.map-ctrl-btn:hover{color:#e0e6f0;border-color:#4a6a9a}
+.map-ctrl-btn.active{color:#7dd3fc;border-color:#7dd3fc;background:rgba(125,211,252,0.08)}
+
+/* ── CITY LABELS ────────────────────────── */
+.city-label{color:#e0e6f0;font-size:10px;font-family:'Segoe UI',system-ui,sans-serif;font-weight:600;text-shadow:0 0 4px #000,0 0 8px #000,1px 1px 2px #000;pointer-events:none;white-space:nowrap;letter-spacing:.3px}
+.city-label.rank-1{font-size:12px;color:#f0f4ff}
+.city-label.rank-2{font-size:10px;color:#c8d8f0}
+.city-label.rank-3{font-size:9px;color:#8899bb}
+
+/* ── LEAFLET OVERRIDES ─────────────────── */
+.leaflet-container{background:#0d1525}
+.leaflet-control-zoom{border:1px solid #2a3a5a !important}
+.leaflet-control-zoom a{background:#0d1a30 !important;color:#7dd3fc !important;border-color:#2a3a5a !important}
+.leaflet-control-zoom a:hover{background:#1a2a45 !important}
+.leaflet-popup-content-wrapper{background:#0d1a30;color:#e0e6f0;border:1px solid #2a3a5a;border-radius:8px}
+.leaflet-popup-tip{background:#0d1a30}
+.leaflet-popup-content{font-size:12px;line-height:1.6}
+
+/* ── MOBILE ────────────────────────────── */
+@media(max-width:640px){
+  #sidebar{position:absolute;left:0;top:0;bottom:0;z-index:700;margin-left:-300px}
+  #sidebar.open{margin-left:0}
+  #sidebar-toggle{z-index:800}
+  #stats-bar .stat .lbl{display:none}
+  #stats-bar .stat .val{font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<!-- STATS BAR -->
+<div id="stats-bar">
+  <div id="stats-title">N700QT <span>✈ a955fe</span></div>
+  <div class="stat"><span class="val" id="s-flights">–</span><span class="lbl">Flights</span></div>
+  <div class="stat"><span class="val" id="s-dist">–</span><span class="lbl">Total nm</span></div>
+  <div class="stat"><span class="val" id="s-hours">–</span><span class="lbl">Hours</span></div>
+  <div class="stat"><span class="val" id="s-longest">–</span><span class="lbl">Longest nm</span></div>
+  <div class="stat"><span class="val" id="s-maxalt">–</span><span class="lbl">Max Alt ft</span></div>
+  <div class="stat"><span class="val" id="s-busiest">–</span><span class="lbl">Busiest Yr</span></div>
+  <button id="stats-collapse" onclick="toggleStats()">▲</button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <!-- SIDEBAR -->
+  <div id="sidebar" class="collapsed">
+    <div id="sidebar-header">
+      <h3>Flights</h3>
+      <input id="search" type="text" placeholder="Search date…" oninput="filterFlights()"/>
+    </div>
+    <div id="year-filter"></div>
+    <div id="flight-count"></div>
+    <div id="flight-list"></div>
+  </div>
+
+  <button id="sidebar-toggle" onclick="toggleSidebar()">›</button>
+
+  <!-- MAP -->
+  <div id="map"></div>
+
+  <!-- LEGEND -->
+  <div id="legend">
+    <h4>Year</h4>
+    <div id="legend-rows"></div>
+  </div>
+
+  <!-- MAP OVERLAY CONTROLS -->
+  <div id="map-controls">
+    <button class="map-ctrl-btn active" id="city-toggle-btn" onclick="toggleCities()">🏙 Cities</button>
+    <button class="map-ctrl-btn active" id="airport-toggle-btn" onclick="toggleAirports()">✈ Airports</button>
+  </div>
+</div>
+
+<script>
+// ── YEAR COLORS (2016-2026) ──────────────────────────────────────────────────
+const YEAR_COLORS = {
+  2016: '#60a5fa', // blue
+  2017: '#fb923c', // orange
+  2018: '#f87171', // red
+  2019: '#34d399', // emerald
+  2020: '#a78bfa', // violet
+  2021: '#facc15', // yellow
+  2022: '#38bdf8', // sky
+  2023: '#4ade80', // green
+  2024: '#fb7185', // rose
+  2025: '#c084fc', // purple
+  2026: '#f0abfc'  // fuchsia
+};
+
+// ── MAP INIT ─────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [35, -20],
+  zoom: 3,
+  zoomSnap: 0.5,
+  worldCopyJump: true
+});
+
+// ── WORLD BASEMAP (embedded GeoJSON) ─────────────────────────────────────────
+let worldLayer = null;
+let flightsData = null;
+let allFlights = [];
+let visibleFlights = [];
+let flightLayers = {};
+let selectedId = null;
+let activeYears = new Set();
+let statsVisible = true;
+let sidebarOpen = false;
+let searchTerm = '';
+
+// ── OVERLAY STATE ────────────────────────────────────────────────────────────
+let citiesData = null;
+let cityMarkers = [];
+let citiesVisible = true;
+
+let runwaysData = null;
+let runwayLayer = null;
+let airportsVisible = true;
+
+// ── CITY LABELS ──────────────────────────────────────────────────────────────
+async function loadCities() {
+  if (citiesData) return;
+  const res = await fetch('cities.json');
+  citiesData = await res.json();
+  renderCityLabels();
+  map.on('zoomend', renderCityLabels);
+}
+
+function renderCityLabels() {
+  // Clear existing
+  cityMarkers.forEach(m => map.removeLayer(m));
+  cityMarkers = [];
+  if (!citiesVisible || !citiesData) return;
+
+  const z = map.getZoom();
+  citiesData.forEach(c => {
+    // Only show cities appropriate to current zoom
+    if (c.r === 1 && z < 3) return;
+    if (c.r === 2 && z < 4) return;
+    if (c.r === 3 && z < 5.5) return;
+
+    const rankClass = `rank-${c.r}`;
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="city-label ${rankClass}">${c.n}</div>`,
+      iconAnchor: [0, 0]
+    });
+    const m = L.marker([c.lat, c.lon], { icon, interactive: false, zIndexOffset: -100 });
+    m.addTo(map);
+    cityMarkers.push(m);
+  });
+}
+
+function toggleCities() {
+  citiesVisible = !citiesVisible;
+  const btn = document.getElementById('city-toggle-btn');
+  btn.classList.toggle('active', citiesVisible);
+  renderCityLabels();
+}
+
+// ── AIRPORT RUNWAYS ──────────────────────────────────────────────────────────
+async function loadRunways() {
+  if (runwaysData) return;
+  const res = await fetch('runways.json');
+  runwaysData = await res.json();
+  // Build spatial lookup by ~1° grid cells for fast viewport queries
+  runwaysData._grid = {};
+  runwaysData.forEach(ap => {
+    const key = `${Math.floor(ap.lat)},${Math.floor(ap.lon)}`;
+    if (!runwaysData._grid[key]) runwaysData._grid[key] = [];
+    runwaysData._grid[key].push(ap);
+  });
+  updateRunways();
+  map.on('moveend', updateRunways);
+  map.on('zoomend', updateRunways);
+}
+
+function updateRunways() {
+  if (!airportsVisible || !runwaysData) return;
+  const z = map.getZoom();
+
+  if (runwayLayer) { map.removeLayer(runwayLayer); runwayLayer = null; }
+  if (z < 9) return;
+
+  const bounds = map.getBounds();
+  const minLat = Math.floor(bounds.getSouth()) - 1;
+  const maxLat = Math.ceil(bounds.getNorth()) + 1;
+  const minLon = Math.floor(bounds.getWest()) - 1;
+  const maxLon = Math.ceil(bounds.getEast()) + 1;
+
+  const features = [];
+  for (let la = minLat; la <= maxLat; la++) {
+    for (let lo = minLon; lo <= maxLon; lo++) {
+      const key = `${la},${lo}`;
+      const aps = runwaysData._grid[key] || [];
+      aps.forEach(ap => {
+        ap.runways.forEach(poly => {
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'Polygon', coordinates: [poly.map(p => [p[1], p[0]])] },
+            properties: { name: ap.name, iata: ap.iata }
+          });
+        });
+      });
+    }
+  }
+
+  if (!features.length) return;
+  runwayLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
+    style: { fillColor: '#c8cfd8', fillOpacity: 0.85, color: '#9aa5b4', weight: 0.5 },
+    interactive: false
+  }).addTo(map);
+}
+
+function toggleAirports() {
+  airportsVisible = !airportsVisible;
+  const btn = document.getElementById('airport-toggle-btn');
+  btn.classList.toggle('active', airportsVisible);
+  if (!airportsVisible) {
+    if (runwayLayer) { map.removeLayer(runwayLayer); runwayLayer = null; }
+  } else {
+    updateRunways();
+  }
+}
+
+async function init() {
+  // Load world and flights in parallel
+  const [worldRes, flightRes] = await Promise.all([
+    fetch('world.json'),
+    fetch('flights.json')
+  ]);
+  const worldGeo = await worldRes.json();
+  flightsData = await flightRes.json();
+
+  // Render world
+  worldLayer = L.geoJSON(worldGeo, {
+    style: {
+      fillColor: '#0f1e38',
+      fillOpacity: 1,
+      color: '#1e3a5f',
+      weight: 0.7
+    },
+    interactive: false
+  }).addTo(map);
+
+  allFlights = flightsData.flights || [];
+
+  // Populate year filter
+  const years = Object.keys(YEAR_COLORS).map(Number);
+  activeYears = new Set(years);
+  const yfEl = document.getElementById('year-filter');
+  years.forEach(y => {
+    if (!flightsData.stats.by_year[y]) return;
+    const btn = document.createElement('button');
+    btn.className = 'yr-btn active';
+    btn.textContent = y;
+    btn.style.color = YEAR_COLORS[y];
+    btn.style.borderColor = YEAR_COLORS[y];
+    btn.dataset.year = y;
+    btn.onclick = () => toggleYear(y, btn);
+    yfEl.appendChild(btn);
+  });
+
+  // Legend
+  const legEl = document.getElementById('legend-rows');
+  years.forEach(y => {
+    if (!flightsData.stats.by_year[y]) return;
+    legEl.innerHTML += `<div class="leg-row"><div class="leg-line" style="background:${YEAR_COLORS[y]}"></div><span>${y} (${flightsData.stats.by_year[y] || 0})</span></div>`;
+  });
+
+  // Populate stats
+  const s = flightsData.stats;
+  document.getElementById('s-flights').textContent = s.total_flights.toLocaleString();
+  document.getElementById('s-dist').textContent = (s.total_distance_nm||0).toLocaleString(undefined,{maximumFractionDigits:0});
+  document.getElementById('s-hours').textContent = (s.total_flight_hours||0).toFixed(1);
+  document.getElementById('s-longest').textContent = (s.longest_flight_nm||0).toLocaleString(undefined,{maximumFractionDigits:0});
+  const maxAlt = Math.max(...allFlights.map(f=>f.max_alt_ft||0));
+  document.getElementById('s-maxalt').textContent = maxAlt ? maxAlt.toLocaleString() : '–';
+  const byYear = s.by_year || {};
+  const busiestYr = Object.entries(byYear).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('s-busiest').textContent = busiestYr ? `${busiestYr[0]} (${busiestYr[1]})` : '–';
+
+  renderFlights();
+
+  // Load city labels and runways
+  loadCities();
+  loadRunways();
+
+  // Mobile: start with sidebar closed
+  if (window.innerWidth <= 640) {
+    document.getElementById('sidebar').classList.remove('open');
+  }
+}
+
+// ── RENDER FLIGHTS ─────────────────────────────────────────────────────────
+function renderFlights() {
+  // Remove existing layers
+  Object.values(flightLayers).forEach(l => map.removeLayer(l));
+  flightLayers = {};
+
+  // Filter
+  visibleFlights = allFlights.filter(f => {
+    if (!activeYears.has(f.year)) return false;
+    if (searchTerm && !f.date.includes(searchTerm)) return false;
+    return true;
+  });
+
+  // Draw paths
+  visibleFlights.forEach(f => {
+    const color = YEAR_COLORS[f.year] || '#aaa';
+    const layer = L.polyline(f.path, {
+      color,
+      weight: 1.5,
+      opacity: 0.7,
+      smoothFactor: 2
+    });
+    layer.on('click', () => selectFlight(f.id));
+    layer.on('mouseover', function(e) {
+      this.setStyle({weight: 3, opacity: 1});
+      L.popup({offset:[0,-5], closeButton:false})
+        .setLatLng(e.latlng)
+        .setContent(`<b>${f.date}</b><br>${f.distance_nm} nm · ${formatDur(f.duration_min)}<br>${f.max_alt_ft ? f.max_alt_ft.toLocaleString() + ' ft' : ''}`)
+        .openOn(map);
+    });
+    layer.on('mouseout', function() {
+      if (selectedId !== f.id) this.setStyle({weight: 1.5, opacity: 0.7});
+      map.closePopup();
+    });
+    layer.addTo(map);
+    flightLayers[f.id] = layer;
+  });
+
+  buildFlightList();
+}
+
+// ── FLIGHT LIST ────────────────────────────────────────────────────────────
+function buildFlightList() {
+  const listEl = document.getElementById('flight-list');
+  document.getElementById('flight-count').textContent = `${visibleFlights.length} of ${allFlights.length} flights`;
+
+  const sorted = [...visibleFlights].sort((a,b) => b.start_time.localeCompare(a.start_time));
+  listEl.innerHTML = '';
+  sorted.forEach(f => {
+    const color = YEAR_COLORS[f.year] || '#aaa';
+    const div = document.createElement('div');
+    div.className = 'flight-item' + (f.id === selectedId ? ' selected' : '');
+    div.id = 'fi-' + f.id;
+    div.innerHTML = `
+      <div class="fi-top">
+        <span class="fi-date"><span class="fi-dot" style="background:${color}"></span>${f.date}</span>
+        <span class="fi-dist">${f.distance_nm} nm</span>
+      </div>
+      <div class="fi-detail">
+        <span>${formatDur(f.duration_min)}</span>
+        ${f.max_alt_ft ? `<span>${f.max_alt_ft.toLocaleString()} ft</span>` : ''}
+        ${f.max_gs_kt ? `<span>${f.max_gs_kt} kt</span>` : ''}
+      </div>`;
+    div.onclick = () => selectFlight(f.id, true);
+    listEl.appendChild(div);
+  });
+}
+
+// ── SELECT FLIGHT ──────────────────────────────────────────────────────────
+function selectFlight(id, pan) {
+  if (selectedId && flightLayers[selectedId]) {
+    const prev = allFlights.find(f=>f.id===selectedId);
+    if (prev) flightLayers[selectedId].setStyle({weight:1.5,opacity:0.7,color:YEAR_COLORS[prev.year]||'#aaa'});
+    document.getElementById('fi-'+selectedId)?.classList.remove('selected');
+  }
+  selectedId = id;
+  const f = allFlights.find(f=>f.id===id);
+  if (!f) return;
+  const lyr = flightLayers[id];
+  if (lyr) {
+    lyr.setStyle({weight:3.5,opacity:1,color:'#fff'});
+    lyr.bringToFront();
+    if (pan) map.fitBounds(lyr.getBounds(), {padding:[40,40]});
+    lyr.bindPopup(`<b>${f.date}</b><br>${f.distance_nm} nm · ${formatDur(f.duration_min)}<br>${f.start_time.slice(0,16).replace('T',' ')} UTC<br>${f.max_alt_ft ? f.max_alt_ft.toLocaleString() + ' ft max' : ''}`).openPopup();
+  }
+  const el = document.getElementById('fi-'+id);
+  if (el) { el.classList.add('selected'); el.scrollIntoView({block:'nearest'}); }
+}
+
+// ── FILTERS ────────────────────────────────────────────────────────────────
+function toggleYear(y, btn) {
+  if (activeYears.has(y)) { activeYears.delete(y); btn.classList.remove('active'); btn.style.borderColor='transparent'; }
+  else { activeYears.add(y); btn.classList.add('active'); btn.style.borderColor=YEAR_COLORS[y]; }
+  renderFlights();
+}
+function filterFlights() {
+  searchTerm = document.getElementById('search').value.trim().toLowerCase();
+  renderFlights();
+}
+
+// ── UI TOGGLES ─────────────────────────────────────────────────────────────
+function toggleStats() {
+  statsVisible = !statsVisible;
+  const bar = document.getElementById('stats-bar');
+  const btn = document.getElementById('stats-collapse');
+  bar.querySelectorAll('.stat').forEach(s => s.style.display = statsVisible ? '' : 'none');
+  bar.querySelector('#stats-title').style.display = '';
+  btn.textContent = statsVisible ? '▲' : '▼';
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const btn = document.getElementById('sidebar-toggle');
+  if (window.innerWidth <= 640) {
+    sidebarOpen = !sidebarOpen;
+    sb.classList.toggle('open', sidebarOpen);
+    btn.textContent = sidebarOpen ? '‹' : '›';
+    btn.style.left = sidebarOpen ? '300px' : '0';
+  } else {
+    const collapsed = sb.classList.toggle('collapsed');
+    btn.textContent = collapsed ? '›' : '‹';
+    btn.style.left = collapsed ? '0' : '300px';
+  }
+}
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
+function formatDur(min) {
+  const h = Math.floor(min/60), m = Math.round(min%60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── BOOT ───────────────────────────────────────────────────────────────────
+init().then(() => {
+  // Auto-open sidebar on desktop
+  if (window.innerWidth > 640) {
+    document.getElementById('sidebar').classList.remove('collapsed');
+    document.getElementById('sidebar-toggle').textContent = '‹';
+    document.getElementById('sidebar-toggle').style.left = '300px';
+  }
+});
+</script>
+</body>
+</html>
